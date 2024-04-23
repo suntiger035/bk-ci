@@ -26,6 +26,7 @@
   },
   "scripts": {
     "start": "lerna bootstrap",
+    "serve:dev": "lerna run dev --parallel",
     "build:dev": "lerna run public:dev --parallel",
     "build:test": "lerna run public:test --parallel",
     "build:master": "lerna run public:master --parallel",

@@ -85,6 +85,109 @@
     var ENTERPRISE_VERSION = false
   </script>
   <script>
+
+    //常用localstorage key
+    const COMMON_VARS = {
+      TOKEN_KEY: 'TOKEN',
+      MOA_AUTH_INFO: 'MOA_AUTH_INFO',
+      USER_INFO_KEY: 'USER__INFO',
+      MOA_PATH: 'https://login.moa.moonton.net',
+      APP_PROJECT_ID: 1
+    }
+
+    // ajax请求
+    function ajax(url, method, data) {
+      return new Promise(function(resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.open(method, url, true);
+
+          if (method.toUpperCase() === "POST") {
+              xhr.setRequestHeader("Content-Type", "application/json");
+              data = JSON.stringify(data);
+          }
+
+          xhr.withCredentials = true; // 启用跨域请求
+          
+          xhr.onreadystatechange = function() {
+              if (xhr.readyState == 4) {
+                  if (xhr.status == 200 || xhr.status == 304) {
+                      resolve(xhr.responseText);
+                  } else {
+                      reject(new Error(xhr.statusText));
+                  }
+              }
+          };
+
+          if (method.toUpperCase() === "POST") {
+              xhr.send(data);
+          } else {
+              xhr.send();
+          }
+      });
+    }
+
+    // 获取用户信息
+    function getUserInfo( token) {
+      return ajax(`${COMMON_VARS.MOA_PATH}/api/refresh`, 'POST', {
+        token: token
+      })
+    }
+
+    // 获取用户信息
+    function getRoles( token) {
+      return ajax(`${COMMON_VARS.MOA_PATH}/api/getperms`, 'POST', {
+        token: token
+      })
+    }
+
+    // 获取url参数
+    function getQueryString(name) {
+      let reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)", "i");
+      let r = window.location.search.substr(1).match(reg);
+      if (r != null) {
+        return decodeURIComponent(r[2]);
+      };
+      return null;
+    }
+
+    // 去登录
+    function goLogin() {
+      const redirect = encodeURIComponent(window.location.href)
+      window.location.href = `${COMMON_VARS.MOA_PATH}/login?project=${COMMON_VARS.APP_PROJECT_ID}&redirect=${redirect}`
+    }
+
+    // 登录后执行的操作
+    function afterLoginAction(token){
+      Promise.all([getUserInfo(token), getRoles(token)]).then((res) => {
+        const info = JSON.parse(res[0])
+        const roles = JSON.parse(res[1])
+        const userInfo = Object.assign(info, {
+          avatar: `${COMMON_VARS.MOA_PATH}/avatar/${info.nick}-64.jpg`, 
+          roles: []
+        });
+
+        if (Array.isArray(roles)) {
+            window.setLsCacheItem(COMMON_VARS.ROLES_KEY, roles)
+        } else {
+            userInfo.roles = []
+            window.setLsCacheItem(COMMON_VARS.ROLES_KEY, [])
+        }
+        
+        window.setLsCacheItem(COMMON_VARS.USER_INFO_KEY, userInfo);
+        if(userInfo.token){
+          window.setLsCacheItem(COMMON_VARS.TOKEN_KEY, userInfo.token);
+        }
+        if(userInfo){
+          setCookie(COMMON_VARS.MOA_AUTH_INFO, JSON.stringify(userInfo), location.hostname);
+        }else{
+          deleteCookie(COMMON_VARS.MOA_AUTH_INFO);
+        }
+
+      }).catch((e) => {
+        console.error(e)
+      })
+    }
+
     // 动态加载js
     function importScript(src, oHead, fOnload) {
       var oScript = document.createElement('script')
@@ -486,22 +589,29 @@
         var userInfo = window.getLsCacheItem('userInfo')
 
         fetchData()
-          .then((response) => {
-            resolve(response)
-          })
-          .catch((e) => {
-            console.error(e)
-            if (projectList && allServices && userInfo) {
-              resolve([projectList, allServices, userInfo])
-              return
-            }
+        .then((response) => {
+          resolve(response)
+        })
+        .catch((e) => {
+          console.error(e)
+          if (projectList && allServices && userInfo) {
+            resolve([projectList, allServices, userInfo])
+            return
+          }
 
-            reject(e)
-          })
+          reject(e)
+        })
+
       })
     }
 
-    getData()
+    //登录业务逻辑判断------------------------start
+    const token = getQueryString('token') || getCookie(COMMON_VARS.TOKEN_KEY) || ''
+    if(token){
+      //已登录场景
+      window.setLsCacheItem(COMMON_VARS.TOKEN_KEY, token);
+      afterLoginAction(token);
+      getData()
       .then((response) => {
         init(...response)
       })
@@ -509,6 +619,11 @@
         console.log(e)
         printError(e.status, e.message)
       })
+    }else{
+      goLogin();
+    }
+
+    //登录业务逻辑判断--------------------------end
 
     function printError(status, message) {
       const locale = getCookie('blueking_language')
